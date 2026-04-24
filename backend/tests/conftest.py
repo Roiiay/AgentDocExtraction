@@ -6,3 +6,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 SAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "docs" / "samples" / "group_0000-0099"
 MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models"
+
+
+import pytest
+from fastapi.testclient import TestClient
+
+
+@pytest.fixture
+def client():
+    from backend.app.main import app
+    return TestClient(app)
