@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DocExtraction Debug</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #12121f; color: #ddd; }
+
+        /* Header */
+        #header {
+            background: #1a1a2e; padding: 10px 20px; display: flex; align-items: center; gap: 16px;
+            border-bottom: 1px solid #333;
+        }
+        #header h1 { font-size: 16px; color: #eee; white-space: nowrap; }
+        #upload-form { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: center; }
+        #pdf-input { font-size: 13px; color: #aaa; }
+        #upload-btn {
+            background: #4a9eff; color: #fff; border: none; padding: 6px 18px;
+            border-radius: 4px; font-size: 13px; cursor: pointer;
+        }
+        #upload-btn:disabled { background: #335577; cursor: not-allowed; }
+        #status {
+            font-size: 13px; display: flex; align-items: center; gap: 6px; min-width: 120px;
+        }
+        .spinner {
+            display: inline-block; width: 10px; height: 10px; border: 2px solid #ffc107;
+            border-top-color: transparent; border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Main layout */
+        #content { display: none; height: calc(100vh - 48px); }
+        #content.visible { display: flex; }
+        #left-panel {
+            flex: 3; display: flex; flex-direction: column; border-right: 1px solid #333;
+            overflow: hidden;
+        }
+        #right-panel {
+            flex: 2; display: flex; flex-direction: column; overflow: hidden;
+        }
+
+        /* Page navigation */
+        #page-nav {
+            padding: 8px 16px; display: flex; align-items: center; gap: 8px;
+            border-bottom: 1px solid #333; background: #1a1a2e;
+        }
+        .nav-btn {
+            background: #333; border: 1px solid #555; color: #aaa; padding: 3px 12px;
+            border-radius: 3px; font-size: 12px; cursor: pointer;
+        }
+        .nav-btn:hover { background: #444; }
+        #page-info { color: #888; font-size: 12px; }
+        #chunk-count { color: #666; font-size: 11px; margin-left: auto; }
+
+        /* Image container */
+        #image-wrapper {
+            flex: 1; overflow: auto; padding: 16px; display: flex;
+            justify-content: center; align-items: flex-start;
+        }
+        #image-container { position: relative; display: inline-block; }
+        #page-image { display: block; max-width: 100%; height: auto; }
+        #bbox-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+        }
+        #bbox-overlay rect { pointer-events: all; cursor: pointer; }
+
+        /* Legend */
+        #legend {
+            padding: 6px 16px; display: flex; gap: 8px; border-top: 1px solid #333;
+            background: #1a1a2e;
+        }
+        .legend-badge {
+            font-size: 11px; padding: 2px 8px; border-radius: 3px; color: #fff;
+        }
+
+        /* Chunk list */
+        #chunk-list-header {
+            padding: 8px 16px; color: #888; font-size: 11px;
+            border-bottom: 1px solid #222; background: #1a1a2e;
+        }
+        #chunk-list { max-height: 220px; overflow-y: auto; }
+        .chunk-item {
+            padding: 6px 16px; border-bottom: 1px solid #222; cursor: pointer;
+            display: flex; align-items: center; gap: 8px; font-size: 12px;
+        }
+        .chunk-item:hover { background: #1e1e3a; }
+        .chunk-item.selected { background: #2a2a3e; }
+        .chunk-badge {
+            padding: 1px 6px; border-radius: 2px; font-size: 10px; color: #fff;
+        }
+        .chunk-complexity { font-size: 10px; color: #ff6b6b; margin-left: auto; }
+        .chunk-id { color: #ccc; }
+        .chunk-id.active { font-weight: bold; }
+
+        /* Chunk detail */
+        #chunk-detail {
+            flex: 1; overflow-y: auto; padding: 16px; display: none;
+        }
+        #chunk-detail.visible { display: block; }
+        #detail-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+        #detail-header .id { font-weight: bold; font-size: 15px; }
+        #detail-fields {
+            display: grid; grid-template-columns: 110px 1fr; gap: 4px 8px;
+            font-size: 12px; margin-bottom: 12px;
+        }
+        #detail-fields .label { color: #888; }
+        #detail-fields .value { color: #ccc; }
+        #detail-fields .value.mono { font-family: monospace; font-size: 11px; }
+        #content-section {
+            border-top: 1px solid #333; padding-top: 10px;
+        }
+        #content-section h4 { color: #888; font-size: 11px; margin-bottom: 6px; }
+        #detail-text {
+            background: #0d1117; border-radius: 4px; padding: 10px;
+            font-size: 12px; color: #c9d1d9; white-space: pre-wrap;
+            max-height: 300px; overflow-y: auto; font-family: monospace;
+        }
+
+        /* Error */
+        .error { color: #ff4444; }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <h1>DocExtraction Debug</h1>
+        <form id="upload-form">
+            <input type="file" id="pdf-input" accept=".pdf" required>
+            <button type="submit" id="upload-btn">处理</button>
+        </form>
+        <div id="status"></div>
+    </div>
+
+    <div id="content">
+        <div id="left-panel">
+            <div id="page-nav">
+                <button class="nav-btn" id="prev-btn" onclick="changePage(-1)">◀ Prev</button>
+                <span id="page-info">Page 0 / 0</span>
+                <button class="nav-btn" id="next-btn" onclick="changePage(1)">Next ▶</button>
+                <span id="chunk-count"></span>
+            </div>
+            <div id="image-wrapper">
+                <div id="image-container">
+                    <img id="page-image" src="" alt="">
+                    <svg id="bbox-overlay"></svg>
+                </div>
+            </div>
+            <div id="legend">
+                {% for type, color in type_colors.items() %}
+                <span class="legend-badge" style="background:{{ color }}">{{ type }}</span>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div id="right-panel">
+            <div id="chunk-list-header">分块列表 (<span id="list-count">0</span>)</div>
+            <div id="chunk-list"></div>
+            <div id="chunk-detail">
+                <div id="detail-header">
+                    <span class="id" id="d-id"></span>
+                </div>
+                <div id="detail-fields">
+                    <span class="label">Class</span><span class="value" id="d-class"></span>
+                    <span class="label">Complexity</span><span class="value" id="d-complexity"></span>
+                    <span class="label">Confidence</span><span class="value" id="d-confidence"></span>
+                    <span class="label">YOLO Class</span><span class="value" id="d-yolo-class"></span>
+                    <span class="label">BBox</span><span class="value mono" id="d-bbox"></span>
+                    <span class="label">Extraction</span><span class="value" id="d-method"></span>
+                </div>
+                <div id="content-section">
+                    <h4>提取内容</h4>
+                    <pre id="detail-text"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const TYPE_COLORS = {{ type_colors_json | safe }};
+        let taskData = null;
+        let currentPage = 0;
+        let selectedChunkId = null;
+
+        // --- Upload ---
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const fileInput = document.getElementById('pdf-input');
+            if (!fileInput.files.length) return;
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            document.getElementById('upload-btn').disabled = true;
+            setStatus('processing', '上传中...');
+            document.getElementById('content').classList.remove('visible');
+
+            try {
+                const resp = await fetch('/api/upload', { method: 'POST', body: formData });
+                const data = await resp.json();
+                if (data.task_id) {
+                    pollTaskStatus(data.task_id);
+                } else {
+                    setStatus('error', data.detail || '上传失败');
+                    document.getElementById('upload-btn').disabled = false;
+                }
+            } catch (err) {
+                setStatus('error', '网络错误: ' + err.message);
+                document.getElementById('upload-btn').disabled = false;
+            }
+        });
+
+        // --- Polling ---
+        function pollTaskStatus(taskId) {
+            const poll = async () => {
+                try {
+                    const resp = await fetch(`/api/task/${taskId}`);
+                    const data = await resp.json();
+
+                    if (data.status === 'completed') {
+                        taskData = data;
+                        currentPage = 0;
+                        selectedChunkId = null;
+                        setStatus('done', `完成 — ${data.chunks.length} 个分块`);
+                        document.getElementById('upload-btn').disabled = false;
+                        renderPage(currentPage);
+                        document.getElementById('content').classList.add('visible');
+                        return;
+                    } else if (data.status === 'failed') {
+                        setStatus('error', '处理失败: ' + (data.error_message || '未知错误'));
+                        document.getElementById('upload-btn').disabled = false;
+                        return;
+                    } else {
+                        const statusMap = {
+                            'pending': '等待中...',
+                            'chunking': 'YOLO 布局检测中...',
+                            'extracting': '内容提取中...',
+                            'reviewing': '审核中...',
+                        };
+                        setStatus('processing', statusMap[data.status] || data.status);
+                    }
+                } catch (err) {
+                    setStatus('error', '轮询错误');
+                    document.getElementById('upload-btn').disabled = false;
+                    return;
+                }
+                setTimeout(poll, 2000);
+            };
+            poll();
+        }
+
+        // --- Rendering ---
+        function renderPage(pageIndex) {
+            if (!taskData || !taskData.pages || taskData.pages.length === 0) return;
+            const page = taskData.pages[pageIndex];
+            if (!page) return;
+
+            // Page image
+            const img = document.getElementById('page-image');
+            img.src = 'data:image/png;base64,' + page.image;
+            img.onload = () => renderBboxes(page);
+
+            // Page nav
+            document.getElementById('page-info').textContent =
+                `Page ${pageIndex + 1} / ${taskData.pages.length}`;
+
+            // Get page chunks
+            const pageChunkIds = page.chunks || [];
+            const pageChunks = (taskData.chunks || []).filter(c => pageChunkIds.includes(c.chunk_id));
+
+            document.getElementById('chunk-count').textContent = pageChunks.length + ' chunks';
+
+            // Chunk list
+            renderChunkList(pageChunks);
+
+            // Clear detail
+            selectedChunkId = null;
+            document.getElementById('chunk-detail').classList.remove('visible');
+        }
+
+        function renderBboxes(page) {
+            const svg = document.getElementById('bbox-overlay');
+            const w = page.width;
+            const h = page.height;
+            svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+            svg.innerHTML = '';
+
+            const pageChunkIds = page.chunks || [];
+            const pageChunks = (taskData.chunks || []).filter(c => pageChunkIds.includes(c.chunk_id));
+
+            pageChunks.forEach(chunk => {
+                const [x1, y1, x2, y2] = chunk.bbox;
+                const color = TYPE_COLORS[chunk.class_] || '#999999';
+
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', x1);
+                rect.setAttribute('y', y1);
+                rect.setAttribute('width', x2 - x1);
+                rect.setAttribute('height', y2 - y1);
+                rect.setAttribute('fill', color);
+                rect.setAttribute('fill-opacity', '0.15');
+                rect.setAttribute('stroke', color);
+                rect.setAttribute('stroke-width', '2');
+                rect.setAttribute('data-chunk-id', chunk.chunk_id);
+
+                rect.addEventListener('click', () => selectChunk(chunk.chunk_id));
+                rect.addEventListener('mouseenter', () => {
+                    rect.setAttribute('fill-opacity', '0.35');
+                    rect.setAttribute('stroke-width', '3');
+                });
+                rect.addEventListener('mouseleave', () => {
+                    if (selectedChunkId !== chunk.chunk_id) {
+                        rect.setAttribute('fill-opacity', '0.15');
+                        rect.setAttribute('stroke-width', '2');
+                    }
+                });
+
+                svg.appendChild(rect);
+            });
+        }
+
+        function renderChunkList(pageChunks) {
+            const list = document.getElementById('chunk-list');
+            list.innerHTML = '';
+            document.getElementById('list-count').textContent = pageChunks.length;
+
+            pageChunks.forEach(chunk => {
+                const color = TYPE_COLORS[chunk.class_] || '#999';
+                const item = document.createElement('div');
+                item.className = 'chunk-item';
+                item.setAttribute('data-chunk-id', chunk.chunk_id);
+                item.innerHTML = `
+                    <span class="chunk-badge" style="background:${color}">${chunk.class_}</span>
+                    <span class="chunk-id">${chunk.chunk_id}</span>
+                    <span class="chunk-complexity">${chunk.complexity}</span>
+                `;
+                item.addEventListener('click', () => selectChunk(chunk.chunk_id));
+                list.appendChild(item);
+            });
+        }
+
+        function selectChunk(chunkId) {
+            selectedChunkId = chunkId;
+            const chunk = taskData.chunks.find(c => c.chunk_id === chunkId);
+            if (!chunk) return;
+
+            // Find extracted content
+            const extracted = taskData.extracted_chunks.find(e => e.chunk_id === chunkId);
+
+            // Highlight in list
+            document.querySelectorAll('.chunk-item').forEach(el => {
+                el.classList.toggle('selected', el.getAttribute('data-chunk-id') === chunkId);
+                el.querySelector('.chunk-id').classList.toggle('active', el.getAttribute('data-chunk-id') === chunkId);
+            });
+
+            // Highlight bbox
+            const color = TYPE_COLORS[chunk.class_] || '#999';
+            document.querySelectorAll('#bbox-overlay rect').forEach(rect => {
+                const id = rect.getAttribute('data-chunk-id');
+                if (id === chunkId) {
+                    rect.setAttribute('fill-opacity', '0.4');
+                    rect.setAttribute('stroke-width', '3');
+                } else {
+                    rect.setAttribute('fill-opacity', '0.15');
+                    rect.setAttribute('stroke-width', '2');
+                }
+            });
+
+            // Fill detail panel
+            const color2 = TYPE_COLORS[chunk.class_] || '#999';
+            document.getElementById('d-id').textContent = chunk.chunk_id;
+            document.getElementById('d-id').style.color = color2;
+            document.getElementById('d-class').textContent = chunk.class_;
+            document.getElementById('d-class').style.color = color2;
+            document.getElementById('d-complexity').textContent = chunk.complexity;
+            document.getElementById('d-confidence').textContent = (chunk.metadata.confidence || 0).toFixed(3);
+            document.getElementById('d-yolo-class').textContent = chunk.metadata.yolo_class || '-';
+            document.getElementById('d-bbox').textContent =
+                `[${chunk.bbox.map(v => v.toFixed(1)).join(', ')}]`;
+            document.getElementById('d-method').textContent = extracted ? extracted.extraction_method : '-';
+            document.getElementById('detail-text').textContent = extracted ? extracted.content : '(无提取内容)';
+
+            document.getElementById('chunk-detail').classList.add('visible');
+        }
+
+        function changePage(delta) {
+            if (!taskData || !taskData.pages) return;
+            const newPage = currentPage + delta;
+            if (newPage < 0 || newPage >= taskData.pages.length) return;
+            currentPage = newPage;
+            renderPage(currentPage);
+        }
+
+        // --- Status ---
+        function setStatus(type, text) {
+            const el = document.getElementById('status');
+            if (type === 'processing') {
+                el.innerHTML = `<span class="spinner"></span> ${text}`;
+                el.style.color = '#ffc107';
+            } else if (type === 'error') {
+                el.innerHTML = text;
+                el.style.color = '#ff4444';
+            } else {
+                el.innerHTML = text;
+                el.style.color = '#2ecc71';
+            }
+        }
+    </script>
+</body>
+</html>

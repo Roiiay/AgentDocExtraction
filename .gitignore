@@ -1,13 +1,55 @@
+# === Python ===
 __pycache__/
-*.pyc
-*.pyo
-.env
-.venv/
-venv/
-uploads/
-outputs/
+*.py[cod]
+*$py.class
+*.so
+*.egg
 *.egg-info/
 dist/
 build/
+eggs/
+*.whl
+
+# === Virtual environments ===
+.venv/
+venv/
+env/
+
+# === Environment & secrets ===
+.env
+
+# === IDE ===
 .idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# === Testing ===
 .pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# === OS files ===
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# === Project: model weights (large files, do not commit) ===
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.bin
+
+# === Project: runtime directories ===
+uploads/
+outputs/
+
+# === Project: sample data (large PDFs) ===
+docs/samples/
+
+# === Claude Code / Superpowers ===
+.superpowers/
+docs/superpowers/

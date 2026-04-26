@@ -7,7 +7,12 @@ from backend.app.config import (
     PROJECT_ROOT,
     TYPE_COLORS,
     VALID_CONVERSION_TYPES,
+    YOLO_MODEL_BACKEND,
     YOLO_MODEL_PATH,
+    YOLO_MODEL_PATHS,
+    YOLO_TO_DISPLAY_TYPE,
+    YOLOV11S_TO_DISPLAY_TYPE,
+    DOCLAYOUT_TO_DISPLAY_TYPE,
 )
 
 
@@ -20,7 +25,7 @@ def test_models_dir_exists():
 
 
 def test_yolo_model_path_points_to_file():
-    assert YOLO_MODEL_PATH.name == "yolov11s-doclaynet.pt"
+    assert YOLO_MODEL_PATH.name == YOLO_MODEL_PATHS[YOLO_MODEL_BACKEND].name
 
 
 def test_category_map_covers_all_display_types():
@@ -60,3 +65,26 @@ def test_complexity_thresholds_ordering():
 
 def test_max_review_rounds_positive():
     assert MAX_REVIEW_ROUNDS >= 1
+
+
+def test_yolo_to_display_type_covers_all_yolo_classes():
+    """根据当前后端验证 YOLO 类别映射的键。"""
+    if YOLO_MODEL_BACKEND == "yolov11s":
+        yolo_classes = {
+            "Title", "Section-header", "Text", "Caption", "List-item",
+            "Footnote", "Page-footer", "Page-header", "Table", "Formula", "Picture",
+        }
+        assert yolo_classes == set(YOLOV11S_TO_DISPLAY_TYPE.keys())
+    elif YOLO_MODEL_BACKEND == "doclayout":
+        yolo_classes = {
+            "title", "plain text", "figure", "figure_caption",
+            "table", "table_caption", "table_footnote",
+            "isolate_formula", "formula_caption",
+        }
+        assert yolo_classes == set(DOCLAYOUT_TO_DISPLAY_TYPE.keys())
+
+
+def test_yolo_to_display_type_maps_to_valid_display_types():
+    """确保映射到了有效的显示类型。"""
+    display_types = set(YOLO_TO_DISPLAY_TYPE.values())
+    assert display_types == {"Title", "Text", "Table", "Formula", "Picture"}
